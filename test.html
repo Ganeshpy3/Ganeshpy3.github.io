@@ -1,1 +1,201 @@
 
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Copy Time Slot Test</title>
+<style>
+  body { margin: 0; background: #f3f2f7; }
+  .t-wrap { max-width: 760px; margin: 0 auto; padding: 24px 16px 64px; font: 14px/1.5 -apple-system, "Segoe UI", Roboto, Arial, sans-serif; color: #1d1b26; }
+  .t-card { background: #fff; border: 1px solid #dcd9e6; border-radius: 8px; padding: 16px; margin-bottom: 16px; }
+  .t-card h1 { font-size: 18px; margin: 0 0 4px; }
+  .t-card h2 { font-size: 14px; margin: 0 0 10px; }
+  .t-muted { color: #5d5a6b; font-size: 13px; margin: 0; }
+  .t-row { display: flex; gap: 12px; flex-wrap: wrap; margin: 14px 0; }
+  .t-row label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: #5d5a6b; }
+  .t-row input[type=text], .t-row select { font: inherit; font-size: 13px; padding: 6px 8px; border: 1px solid #cfcbdc; border-radius: 6px; min-width: 220px; }
+  .t-row .t-check { flex-direction: row; align-items: center; align-self: flex-end; padding-bottom: 6px; }
+  .t-days { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+  .t-day-name { font-size: 11px; font-weight: 600; color: #5d5a6b; }
+  .t-day-date { font-weight: 600; margin-bottom: 8px; }
+  .t-chip { display: block; width: 100%; margin-bottom: 6px; font: inherit; font-size: 12px; padding: 6px 0; border: 1px solid #cfcbdc; border-radius: 4px; background: #fff; color: #1d1b26; cursor: pointer; }
+  .t-chip.active { background: #50487F; border-color: #50487F; color: #fff; }
+  .t-chip:disabled { opacity: .4; cursor: not-allowed; }
+  .t-foot { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 14px; }
+  .t-btn { font: inherit; font-size: 14px; padding: 8px 18px; border-radius: 6px; border: 1px solid #50487F; background: #50487F; color: #fff; cursor: pointer; }
+  .t-btn:disabled { opacity: .45; cursor: not-allowed; }
+  .t-preview { overflow-x: auto; border: 1px dashed #cfcbdc; border-radius: 6px; }
+  .t-toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: #1d1b26; color: #fff; padding: 8px 14px; border-radius: 6px; font: 13px -apple-system, "Segoe UI", Arial, sans-serif; opacity: 0; transition: opacity .2s; pointer-events: none; }
+  .t-toast.show { opacity: 1; }
+  @media (max-width: 520px) { .t-days { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<div class="t-wrap">
+  <div class="t-card">
+    <h1>Copy Time Slots (dummy data)</h1>
+    <p class="t-muted">Pick up to 10 slots, click <b>Copy Time Slots</b>, then paste (Ctrl/Cmd+V) into a new Outlook desktop compose window. The copied HTML and the copy logic match the browser extension's email-timeslot component on branch ZB_OUTLOOK_DESKTOP_APP_FIX.</p>
+    <div class="t-row">
+      <label>Service name<input type="text" id="t-service" value="Product Demo"></label>
+      <label>Time zone
+        <select id="t-tz">
+          <option value="Asia/Kolkata|330">Asia/Kolkata</option>
+          <option value="America/New_York|-300">America/New_York</option>
+          <option value="Europe/London|0">Europe/London</option>
+          <option value="Australia/Sydney|660">Australia/Sydney</option>
+        </select>
+      </label>
+      <label class="t-check"><input type="checkbox" id="t-show-tz" checked>&nbsp;Show time zone row (time zone not frozen)</label>
+    </div>
+    <div class="t-days" id="t-days"></div>
+    <div class="t-foot">
+      <span class="t-muted" id="t-count"></span>
+      <button class="t-btn" id="t-copy">Copy Time Slots</button>
+    </div>
+  </div>
+  <div class="t-card">
+    <h2>What gets copied</h2>
+    <div class="t-preview" id="t-preview"></div>
+  </div>
+</div>
+
+<div id="gmail-content" style="display: none;"></div>
+<div class="t-toast" id="t-toast"></div>
+
+<script>
+  var FONT = "'Segoe UI', system-ui, -apple-system, Roboto, Arial, sans-serif";
+  var SERVICE_URL = "https://dummy-business.zohobookings.com/#/product-demo";
+  var MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+  var DAY_NAMES = ["SUN","MON","TUE","WED","THU","FRI","SAT"];
+  var MAX_SLOTS = 10;
+
+  function range(fromMin, toMin, step) {
+    var out = [];
+    for (var m = fromMin; m <= toMin; m += step) {
+      var h = Math.floor(m / 60), mm = m % 60, h12 = h % 12 || 12;
+      out.push((h12 < 10 ? "0" : "") + h12 + ":" + (mm < 10 ? "0" : "") + mm + " " + (h < 12 ? "AM" : "PM"));
+    }
+    return out;
+  }
+  var DAYS = [
+    { y: 2026, m: 10, d: 12, slots: range(9 * 60, 12 * 60, 30), pre: ["09:00 AM", "10:30 AM"] },
+    { y: 2026, m: 10, d: 13, slots: range(13 * 60, 17 * 60 + 30, 30), pre: ["02:00 PM", "04:30 PM"] },
+    { y: 2026, m: 10, d: 14, slots: ["10:00 AM", "11:30 AM", "03:00 PM", "04:30 PM"], pre: ["11:30 AM"] }
+  ].map(function (day) {
+    day.slotMap = day.slots.map(function (s) { return { key: s, isSelected: day.pre.indexOf(s) > -1 }; });
+    return day;
+  });
+
+  function esc(s) {
+    return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  }
+  function tz() {
+    var v = document.getElementById("t-tz").value.split("|");
+    return { name: v[0], offset: Number(v[1]) };
+  }
+  // Same as component.js getSlotTimeStamp: wall-clock date + slot in TIME_ZONE -> epoch ms
+  function slotTimeStamp(day, key) {
+    var p = key.match(/(\d+):(\d+) (AM|PM)/), h = Number(p[1]) % 12 + (p[3] === "PM" ? 12 : 0);
+    return Date.UTC(day.y, day.m, day.d, h, Number(p[2])) - tz().offset * 60000;
+  }
+  function selectedCount() {
+    return DAYS.reduce(function (n, day) { return n + day.slotMap.filter(function (s) { return s.isSelected; }).length; }, 0);
+  }
+
+  // Mirrors the #gmail-content block in email-timeslot/template.hbs (showAddTimesIcon = false, so padding: 30px)
+  function renderEmail() {
+    var TIME_ZONE = tz().name, serviceName = esc(document.getElementById("t-service").value);
+    var cols = DAYS.filter(function (day) { return day.slotMap.some(function (s) { return s.isSelected; }); }).map(function (day) {
+      var rows = day.slotMap.filter(function (s) { return s.isSelected; }).map(function (s) {
+        var href = SERVICE_URL + "?timestamp=" + slotTimeStamp(day, s.key) + "&amp;timezone=" + TIME_ZONE + "&amp;source=zbe&amp;bookedFrom=BrowserExtension";
+        return '<tr><td align="center" style="padding-bottom: 10px;">' +
+          '<table role="presentation" cellpadding="0" cellspacing="0" border="0"><tbody><tr>' +
+          '<td bgcolor="#50487F" style="background-color: #50487F;border-radius: 4px;padding: 1px;">' +
+          '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tbody><tr>' +
+          '<td align="center" bgcolor="#ffffff" style="background-color: #ffffff;border-radius: 3px;padding: 8px 20px;line-height: 16px;">' +
+          '<a style="font-family: ' + FONT + ';font-size: 12px;line-height: 16px;color: #50487F;text-decoration: none;" href="' + href + '" target="_blank">' + s.key + '</a>' +
+          '</td></tr></tbody></table>' +
+          '</td></tr></tbody></table>' +
+          '</td></tr>';
+      }).join("");
+      return '<td valign="top" align="center" width="170" style="width: 170px;">' +
+        '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tbody>' +
+        '<tr><td align="center" style="font-size: 17px;font-weight: 600;font-family: ' + FONT + ';padding-bottom: 20px;">' + day.d + ' ' + MONTHS[day.m] + ' ' + day.y + '</td></tr>' +
+        rows +
+        '</tbody></table></td>';
+    }).join("");
+    var tzRow = document.getElementById("t-show-tz").checked
+      ? '<tr><td style="font-family: ' + FONT + ';padding-bottom: 20px;font-size: 14px;">Time zone: <b style="font-family: ' + FONT + ';">' + TIME_ZONE + '</b> <a href="' + SERVICE_URL + '?openTimeZoneOption=true" style="font-family: ' + FONT + ';">Change</a></td></tr>'
+      : '';
+    return '<table role="presentation" cellpadding="0" cellspacing="0" border="0"><tbody><tr>' +
+      '<td style="padding: 30px;">' +
+      '<table role="presentation" cellpadding="0" cellspacing="0" border="0"><tbody>' +
+      '<tr><td style="font-family: ' + FONT + ';padding-bottom: 20px;font-size: 14px;">Please pick a time that works for you.</td></tr>' +
+      '<tr><td style="font-family: ' + FONT + ';padding-bottom: 20px;font-size: 14px;">Service Name: <b style="font-family: ' + FONT + ';">' + serviceName + '</b></td></tr>' +
+      tzRow +
+      '<tr><td style="padding: 30px 0px;"><table role="presentation" cellpadding="0" cellspacing="0" border="0"><tbody><tr>' + cols + '</tr></tbody></table></td></tr>' +
+      // en.properties zcb.chrome.copy.slot.email.footer.msg, verbatim
+      '<tr><td style="font-family: ' + FONT + ';padding-top: 20px;font-size: 14px;">Doesn\'t fit your schedule? <a href=' + SERVICE_URL + ' target=\'_blank\' style=\'font-family: system-ui\'>See other available slots</a></td></tr>' +
+      '</tbody></table>' +
+      '</td></tr></tbody></table>';
+  }
+
+  function renderPicker() {
+    var count = selectedCount(), limitHit = count >= MAX_SLOTS;
+    document.getElementById("t-days").innerHTML = DAYS.map(function (day, di) {
+      var date = new Date(day.y, day.m, day.d);
+      return '<div><div class="t-day-name">' + DAY_NAMES[date.getDay()] + '</div>' +
+        '<div class="t-day-date">' + MONTHS[day.m] + ' ' + day.d + '</div>' +
+        day.slotMap.map(function (s, si) {
+          return '<button class="t-chip' + (s.isSelected ? ' active' : '') + '" data-day="' + di + '" data-slot="' + si + '"' +
+            (!s.isSelected && limitHit ? ' disabled' : '') + '>' + s.key + '</button>';
+        }).join("") + '</div>';
+    }).join("");
+    document.getElementById("t-count").textContent = count + " of " + MAX_SLOTS + " slots selected";
+    document.getElementById("t-copy").disabled = count === 0;
+    var html = renderEmail();
+    document.getElementById("gmail-content").innerHTML = html;
+    document.getElementById("t-preview").innerHTML = html;
+  }
+
+  function toast(msg) {
+    var t = document.getElementById("t-toast");
+    t.textContent = msg; t.classList.add("show");
+    clearTimeout(t._h); t._h = setTimeout(function () { t.classList.remove("show"); }, 1800);
+  }
+
+  // Same steps as component.js copyTimeSlot
+  function copyTimeSlot() {
+    var emailContent = document.getElementById("gmail-content");
+    var tempDiv = document.createElement("div");
+    emailContent.style.display = "block";
+    tempDiv.innerHTML = emailContent.innerHTML;
+    document.body.appendChild(tempDiv);
+    var range = document.createRange();
+    range.selectNode(tempDiv);
+    var selection = window.getSelection();
+    selection.removeAllRanges();
+    selection.addRange(range);
+    var ok = document.execCommand("copy");
+    document.body.removeChild(tempDiv);
+    selection.removeAllRanges();
+    emailContent.style.display = "none";
+    toast(ok ? "Time slots copied" : "Copy failed, try a different browser");
+  }
+
+  document.getElementById("t-days").addEventListener("click", function (e) {
+    var b = e.target.closest(".t-chip"); if (!b || b.disabled) return;
+    var s = DAYS[b.dataset.day].slotMap[b.dataset.slot];
+    s.isSelected = !s.isSelected;
+    renderPicker();
+  });
+  document.getElementById("t-copy").addEventListener("click", copyTimeSlot);
+  ["t-service", "t-tz", "t-show-tz"].forEach(function (id) {
+    document.getElementById(id).addEventListener("input", renderPicker);
+    document.getElementById(id).addEventListener("change", renderPicker);
+  });
+  renderPicker();
+</script>
+</body>
+</html>
